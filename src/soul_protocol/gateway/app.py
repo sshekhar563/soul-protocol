@@ -20,10 +20,73 @@ from starlette.requests import Request
 from starlette.responses import HTMLResponse, JSONResponse
 from starlette.routing import Route
 
-from ..runtime.middleware import AutoObserveMiddleware
 from ..runtime.soul import Soul
 from ..runtime.types import Interaction, MemoryType
 from ._dashboard import DASHBOARD_HTML
+
+try:
+    from ..runtime.middleware import AutoObserveMiddleware
+except ImportError:  # auto_observe.py not yet on this branch
+
+    class AutoObserveMiddleware:  # type: ignore[no-redef]
+        """Minimal inline fallback so the gateway works standalone."""
+
+        def __init__(self, soul: Soul, **_kw: object) -> None:
+            self._soul = soul
+
+        async def turn(
+            self,
+            user_input: str,
+            agent_output: str = "",
+            *,
+            query: str | None = None,
+            limit: int | None = None,
+            user_id: str | None = None,
+            layer: str | None = None,
+            domain: str | None = None,
+            channel: str | None = None,
+        ) -> dict:
+            memories: list[dict] = []
+            if query:
+                results = await self._soul.recall(
+                    query,
+                    limit=limit if limit is not None else 5,
+                    user_id=user_id,
+                    layer=layer,
+                    domain=domain,
+                )
+                memories = [
+                    {
+                        "id": r.id,
+                        "type": r.type.value,
+                        "layer": r.layer or r.type.value,
+                        "domain": r.domain or "default",
+                        "content": r.content,
+                        "importance": r.importance,
+                        "emotion": r.emotion,
+                        "user_id": r.user_id,
+                    }
+                    for r in results
+                ]
+            await self._soul.observe(
+                Interaction(
+                    user_input=user_input,
+                    agent_output=agent_output,
+                    channel=channel or "auto",
+                ),
+                user_id=user_id,
+                domain=domain or "default",
+            )
+            state = self._soul.state
+            return {
+                "soul": self._soul.name,
+                "mood": state.mood.value,
+                "energy": round(state.energy, 1),
+                "user_id": user_id,
+                "recalled": len(memories),
+                "memories": memories,
+            }
+
 
 logger = logging.getLogger(__name__)
 
@@ -101,11 +164,7 @@ def _last_user_message(messages: list[Any]) -> str:
         if isinstance(content, str):
             return content
         if isinstance(content, list):
-            parts = [
-                p.get("text", "")
-                for p in content
-                if isinstance(p, dict) and p.get("text")
-            ]
+            parts = [p.get("text", "") for p in content if isinstance(p, dict) and p.get("text")]
             return " ".join(parts)
     return ""
 
@@ -119,9 +178,7 @@ def _assistant_reply(response_json: dict[str, Any]) -> str:
     if isinstance(content, str):
         return content
     if isinstance(content, list):
-        return " ".join(
-            p.get("text", "") for p in content if isinstance(p, dict) and p.get("text")
-        )
+        return " ".join(p.get("text", "") for p in content if isinstance(p, dict) and p.get("text"))
     return ""
 
 

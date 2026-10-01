@@ -102,9 +102,7 @@ def test_proxy_auto_observes_turn(proxy):
 def test_proxy_fire_and_forget_mode_returns_response(proxy):
     _, llm_client, soul, _ = proxy
     config = LLMProxyConfig(base_url="http://llm.test/v1", api_key="sk-test", model="gpt-4")
-    app = create_app(
-        soul, llm_config=config, llm_client=llm_client, observe_mode="fire_and_forget"
-    )
+    app = create_app(soul, llm_config=config, llm_client=llm_client, observe_mode="fire_and_forget")
     with TestClient(app) as client:
         r = client.post(
             "/v1/chat/completions",

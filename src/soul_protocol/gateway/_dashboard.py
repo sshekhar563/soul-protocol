@@ -2,7 +2,9 @@
 # Created: 2026-10 - Moved out of app.py and redesigned. Dark/light/system theme,
 #   sidebar navigation, keyboard shortcuts, memory filters/sort/export, chart
 #   tooltips, expandable trust chain, configurable auto-refresh. No emoji, no
-#   gradients, no animation. All dynamic text is HTML-escaped before insertion.
+#   gradients. Motion is limited to short color and width transitions, which
+#   are disabled under prefers-reduced-motion. All dynamic text is HTML-escaped
+#   before insertion.
 #   Only the existing read-only /api/* endpoints are used.
 
 DASHBOARD_HTML = r"""<!doctype html>
@@ -11,6 +13,7 @@ DASHBOARD_HTML = r"""<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Soul Dashboard</title>
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <script>
 (function(){
   var pref='system';
@@ -74,7 +77,7 @@ button{cursor:pointer}
 .refresh-opts select{background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:3px 6px;font-size:12px}
 .refresh-opts input[type=checkbox]{accent-color:var(--accent)}
 
-.main{min-width:0;padding:24px 32px 64px;max-width:1180px;width:100%}
+.main{min-width:0;padding:24px 32px 64px;width:100%}
 .top{display:flex;flex-wrap:wrap;gap:12px 20px;align-items:flex-start;justify-content:space-between;margin-bottom:24px}
 .top h1{font-size:22px;font-weight:600;letter-spacing:-.01em}
 .did{display:inline-block;background:none;border:0;padding:0;font-family:var(--mono);font-size:11px;color:var(--muted);max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -91,6 +94,12 @@ button{cursor:pointer}
 .btn.ghost{background:transparent;color:var(--text);border-color:var(--border);font-weight:500}
 .btn.ghost:hover{border-color:var(--border-strong);filter:none}
 .btn:disabled{opacity:.5;cursor:default}
+.nav button,.btn,.fbtn,.card,.mem,.chip,.tl-row,.seg button,.x,.link,.legal a{transition:background-color .15s ease,border-color .15s ease,color .15s ease}
+.link{background:none;border:0;padding:0;font-size:12px;color:var(--accent-text)}
+.link:hover{text-decoration:underline}
+.legal{display:flex;gap:14px;font-size:11px;padding:0 6px}
+.legal a{color:var(--muted);text-decoration:none}
+.legal a:hover{color:var(--text);text-decoration:underline}
 
 .view{display:none}
 .view.active{display:block}
@@ -101,9 +110,11 @@ button{cursor:pointer}
 h2{font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.08em}
 .panel-head h2{margin:0}
 .panel>h2{margin-bottom:14px}
-.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(132px,1fr));gap:10px;margin-bottom:16px}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(132px,1fr));gap:10px;margin-bottom:16px}
 .card{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);padding:12px 14px;text-align:left;display:block;width:100%}
-button.card:hover{border-color:var(--accent)}
+button.card:hover{border-color:var(--accent);background:var(--panel2)}
+button.card .sub::after{content:" \203A";opacity:0;transition:opacity .15s ease}
+button.card:hover .sub::after,button.card:focus-visible .sub::after{opacity:1}
 .card .k{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em}
 .card .v{font-size:24px;font-weight:600;margin-top:2px;font-variant-numeric:tabular-nums}
 .card .sub{font-size:11px;color:var(--muted)}
@@ -114,7 +125,7 @@ button.card:hover{border-color:var(--accent)}
 .id-info{flex:1;min-width:220px}
 .id-info .name{font-size:26px;font-weight:600;letter-spacing:-.01em}
 .id-info .arch{color:var(--accent-text);font-size:14px}
-.id-info .persona{color:var(--muted);margin-top:8px;max-width:64ch}
+.id-info .persona{color:var(--muted);margin-top:8px}
 .chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:12px}
 .chip{background:var(--panel2);border:1px solid var(--border);border-radius:6px;padding:2px 10px;font-size:12px;color:var(--text)}
 .chip.lock{border-color:var(--danger);color:var(--danger)}
@@ -128,7 +139,7 @@ button.card:hover{border-color:var(--accent)}
 .meter .lbl{display:flex;justify-content:space-between;font-size:12px;color:var(--muted);margin-bottom:4px}
 .meter .lbl b{color:var(--text);font-weight:600;font-variant-numeric:tabular-nums}
 .track{background:var(--inset);border:1px solid var(--border);border-radius:4px;height:8px;overflow:hidden}
-.fill{height:100%;background:var(--accent)}
+.fill{height:100%;background:var(--accent);transition:width .4s ease}
 .fill.good{background:var(--good)}.fill.info{background:var(--info)}.fill.warn{background:var(--warn)}
 
 .ocean{display:flex;gap:28px;align-items:center;flex-wrap:wrap}
@@ -155,10 +166,10 @@ button.card:hover{border-color:var(--accent)}
 .range input{accent-color:var(--accent);width:110px}
 .range b{color:var(--text);font-family:var(--mono);min-width:1.5em;display:inline-block;text-align:right}
 .meta-line{display:flex;justify-content:space-between;align-items:center;font-size:12px;color:var(--muted);margin-bottom:8px;gap:12px;flex-wrap:wrap}
-.list{list-style:none;display:flex;flex-direction:column;gap:6px;max-height:560px;overflow-y:auto;padding-right:2px}
+.list{list-style:none;display:flex;flex-direction:column;gap:6px;max-height:calc(100vh - 270px);min-height:360px;overflow-y:auto;padding-right:2px}
 .list li{margin:0}
 .mem{display:block;width:100%;text-align:left;background:var(--inset);border:1px solid var(--border);border-radius:var(--radius);padding:10px 12px}
-.mem:hover{border-color:var(--accent)}
+.mem:hover{border-color:var(--accent);background:var(--panel2)}
 .mem-row{display:flex;gap:6px;align-items:center;margin-bottom:4px}
 .tag{font-size:10px;text-transform:uppercase;letter-spacing:.05em;border-radius:4px;padding:1px 6px;font-weight:600;color:var(--c);background:color-mix(in srgb,var(--c) 14%,transparent);border:1px solid color-mix(in srgb,var(--c) 35%,transparent)}
 .tag.episodic{--c:var(--good)}.tag.semantic{--c:var(--accent-text)}.tag.procedural{--c:var(--info)}
@@ -166,6 +177,10 @@ button.card:hover{border-color:var(--accent)}
 .imp{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--muted)}
 .mem-content{font-size:13px;word-break:break-word;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
 mark{background:color-mix(in srgb,var(--accent) 30%,transparent);color:inherit;border-radius:2px}
+
+.mini-list{list-style:none;display:flex;flex-direction:column;gap:6px}
+.mini-list .mem-content{-webkit-line-clamp:2}
+.skill.compact{grid-template-columns:minmax(0,1fr) 44px minmax(90px,45%);padding:8px 0}
 
 /* Skills / evolution */
 .skill{display:grid;grid-template-columns:minmax(120px,200px) 44px 1fr 96px;gap:14px;align-items:center;padding:10px 0;border-bottom:1px solid var(--border)}
@@ -185,7 +200,7 @@ mark{background:color-mix(in srgb,var(--accent) 30%,transparent);color:inherit;b
 canvas{display:block}
 
 /* Communication */
-.comm{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px}
+.comm{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px}
 .comm-item{background:var(--inset);border:1px solid var(--border);border-radius:var(--radius);padding:12px}
 .comm-item .ck{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em}
 .comm-item .cv{font-size:16px;font-weight:600;color:var(--accent-text);margin-top:2px}
@@ -207,6 +222,8 @@ canvas{display:block}
 
 .kv{display:flex;justify-content:space-between;gap:16px;padding:8px 0;border-bottom:1px solid var(--border);font-size:13px}
 .kv:last-child{border:0}
+.kv-list{margin-top:14px;border-top:1px solid var(--border)}
+.kv-list .kv .mv{font-family:var(--sans);font-weight:500}
 .kv .mk{color:var(--muted)}
 .kv .mv{font-family:var(--mono);text-align:right;overflow-wrap:anywhere}
 
@@ -224,6 +241,7 @@ canvas{display:block}
 #tip{position:fixed;z-index:200;pointer-events:none;display:none;background:var(--panel);border:1px solid var(--border-strong);border-radius:6px;padding:5px 9px;font-size:12px;box-shadow:var(--shadow);max-width:260px}
 #toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);z-index:300;display:none;background:var(--text);color:var(--bg);border-radius:6px;padding:7px 14px;font-size:12px;font-weight:500}
 .help-grid{display:grid;grid-template-columns:auto 1fr;gap:8px 16px;font-size:13px}
+@media(prefers-reduced-motion:reduce){*,*::after{transition:none!important}}
 
 @media(max-width:860px){
   .shell{grid-template-columns:1fr}
@@ -236,7 +254,8 @@ canvas{display:block}
   .main{padding:20px 16px 48px}
   .two{grid-template-columns:1fr}
   .top-right{align-items:flex-start}
-  .skill{grid-template-columns:1fr 44px;gap:8px}.skill .meter,.skill .dt{grid-column:1/-1;text-align:left}
+  .skill,.skill.compact{grid-template-columns:1fr 44px;gap:8px}.skill .meter,.skill .dt{grid-column:1/-1;text-align:left}
+  .legal{order:4}
   .trait{grid-template-columns:110px 1fr 40px}
 }
 </style>
@@ -255,7 +274,7 @@ canvas{display:block}
     </nav>
     <div class="side-foot">
       <div class="refresh-opts">
-        <label><span>Auto refresh</span><input type="checkbox" id="auto" checked></label>
+        <label><span>Auto Refresh</span><input type="checkbox" id="auto" checked></label>
         <label><span>Every</span>
           <select id="interval" aria-label="Refresh interval">
             <option value="10">10 s</option><option value="30" selected>30 s</option><option value="60">60 s</option><option value="300">5 min</option>
@@ -271,6 +290,7 @@ canvas{display:block}
         </div>
       </div>
       <button type="button" class="btn ghost" id="help-btn">Shortcuts <span class="kbd">?</span></button>
+      <nav class="legal" aria-label="Legal"><a href="/privacy">Privacy Policy</a><a href="/terms">Terms</a></nav>
     </div>
   </aside>
 
@@ -282,13 +302,13 @@ canvas{display:block}
       </div>
       <div class="top-right">
         <div class="badges">
-          <span class="badge">mood <b id="mood">-</b></span>
-          <span class="badge">energy <b id="energy">-</b></span>
-          <span class="badge">focus <b id="focus">-</b></span>
-          <span class="badge">lifecycle <b id="lifecycle">-</b></span>
+          <span class="badge">Mood <b id="mood">-</b></span>
+          <span class="badge">Energy <b id="energy">-</b></span>
+          <span class="badge">Focus <b id="focus">-</b></span>
+          <span class="badge">Lifecycle <b id="lifecycle">-</b></span>
         </div>
         <div class="status">
-          <span id="updated" aria-live="polite"><span class="dot"></span>waiting</span>
+          <span id="updated" aria-live="polite"><span class="dot"></span>Waiting</span>
           <button type="button" class="btn" id="refresh">Refresh</button>
         </div>
       </div>
@@ -306,8 +326,8 @@ canvas{display:block}
           </div>
           <div class="kv-mini">
             <div class="l">Born</div><div class="xv" id="id-born">-</div>
-            <div class="l">Soul age</div><div class="xv" id="id-age">-</div>
-            <div class="l">Bonded to</div><div class="xv" id="id-bond">-</div>
+            <div class="l">Soul Age</div><div class="xv" id="id-age">-</div>
+            <div class="l">Bonded To</div><div class="xv" id="id-bond">-</div>
           </div>
         </div>
       </div>
@@ -315,6 +335,16 @@ canvas{display:block}
       <div class="two">
         <div class="panel"><h2>State</h2><div id="state-bars"></div></div>
         <div class="panel"><h2>Bond</h2><div id="bond-bars"></div></div>
+      </div>
+      <div class="two">
+        <div class="panel">
+          <div class="panel-head"><h2>Top Memories</h2><button type="button" class="link" data-goto="memories">View All</button></div>
+          <ul class="mini-list" id="ov-mem"></ul>
+        </div>
+        <div class="panel">
+          <div class="panel-head"><h2>Top Skills</h2><button type="button" class="link" data-goto="skills">View All</button></div>
+          <div id="ov-skills"></div>
+        </div>
       </div>
       <div class="panel">
         <h2>Personality: OCEAN</h2>
@@ -328,32 +358,32 @@ canvas{display:block}
     <!-- Memories -->
     <section class="view" id="v-memories" aria-label="Memories">
       <div class="panel">
-        <div class="panel-head"><h2>Memory browser</h2>
+        <div class="panel-head"><h2>Memory Browser</h2>
           <div style="display:flex;gap:8px">
             <button type="button" class="btn ghost" id="mem-export">Export JSON</button>
           </div>
         </div>
         <div class="tools">
-          <input id="search" class="search" type="search" placeholder="Search memories  (press / to focus)" aria-label="Search memories">
+          <input id="search" class="search" type="search" placeholder="Search Memories (Press / to Focus)" aria-label="Search memories">
           <select id="mem-sort" class="sel" aria-label="Sort memories">
-            <option value="importance">Sort: importance</option>
-            <option value="type">Sort: type</option>
+            <option value="importance">Sort: Importance</option>
+            <option value="type">Sort: Type</option>
             <option value="alpha">Sort: A to Z</option>
           </select>
-          <label class="range">Min importance <input type="range" id="mem-min" min="0" max="10" value="0"><b id="mem-min-v">0</b></label>
+          <label class="range">Min Importance <input type="range" id="mem-min" min="0" max="10" value="0"><b id="mem-min-v">0</b></label>
         </div>
         <div class="chipbar" id="mem-filters" style="margin-bottom:12px"></div>
-        <div class="meta-line"><span id="mem-count"></span><span>Click a memory for details. Arrow keys move between memories.</span></div>
+        <div class="meta-line"><span id="mem-count"></span><span>Click a memory for details. Use the arrow keys to move between memories in the detail view.</span></div>
         <ul class="list" id="mem-list"></ul>
       </div>
     </section>
 
     <!-- Skills -->
-    <section class="view" id="v-skills" aria-label="Skills and evolution">
+    <section class="view" id="v-skills" aria-label="Skills and Evolution">
       <div class="panel">
         <div class="panel-head"><h2>Skills</h2>
           <select id="skill-sort" class="sel" aria-label="Sort skills">
-            <option value="level">Sort: level</option><option value="name">Sort: name</option><option value="recent">Sort: recently used</option>
+            <option value="level">Sort: Level</option><option value="name">Sort: Name</option><option value="recent">Sort: Recently Used</option>
           </select>
         </div>
         <div id="skills-list"></div>
@@ -361,31 +391,31 @@ canvas{display:block}
       <div class="panel">
         <h2>Evolution</h2>
         <div id="evo-info"></div>
-        <div class="sub-h">Pending mutations</div>
+        <div class="sub-h">Pending Mutations</div>
         <div id="mutations"></div>
       </div>
       <div class="panel">
-        <h2>Evaluation history</h2>
+        <h2>Evaluation History</h2>
         <div class="chartbox"><canvas id="eval-chart" aria-label="Evaluation scores" role="img"></canvas></div>
-        <div class="empty" id="eval-empty" style="display:none">No evaluations yet</div>
+        <div class="empty" id="eval-empty" style="display:none">No Evaluations Yet</div>
       </div>
     </section>
 
     <!-- Communication -->
     <section class="view" id="v-comms" aria-label="Communication">
-      <div class="panel"><h2>Communication style</h2><div class="comm" id="comm-style"></div></div>
+      <div class="panel"><h2>Communication Style</h2><div class="comm" id="comm-style"></div></div>
       <div class="two">
         <div class="panel"><h2>Biorhythms</h2><div id="bio-meters"></div></div>
-        <div class="panel"><h2>Self-model: domain confidence</h2><div id="self-model"></div></div>
+        <div class="panel"><h2>Self-Model: Domain Confidence</h2><div id="self-model"></div></div>
       </div>
     </section>
 
     <!-- Trust chain -->
-    <section class="view" id="v-trust" aria-label="Trust chain">
+    <section class="view" id="v-trust" aria-label="Trust Chain">
       <div class="panel">
-        <div class="panel-head"><h2>Audit trail (<span id="tc-count">0</span> entries)</h2></div>
+        <div class="panel-head"><h2>Audit Trail (<span id="tc-count">0</span> entries)</h2></div>
         <div class="tools">
-          <input id="tc-search" class="search" type="search" placeholder="Filter by action" aria-label="Filter trust chain by action">
+          <input id="tc-search" class="search" type="search" placeholder="Filter by Action" aria-label="Filter Trust Chain by action">
         </div>
         <div class="chipbar" id="tc-filters" style="margin-bottom:12px"></div>
         <ol class="tl" id="timeline"></ol>
@@ -395,8 +425,8 @@ canvas{display:block}
     <!-- Metadata -->
     <section class="view" id="v-meta" aria-label="Metadata">
       <div class="two">
-        <div class="panel"><h2>Soul metadata</h2><div id="meta-table"></div></div>
-        <div class="panel"><h2>Memory configuration</h2><div id="mem-config"></div></div>
+        <div class="panel"><h2>Soul Metadata</h2><div id="meta-table"></div></div>
+        <div class="panel"><h2>Memory Configuration</h2><div id="mem-config"></div></div>
       </div>
     </section>
   </main>
@@ -404,28 +434,28 @@ canvas{display:block}
 
 <div class="scrim" id="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
   <div class="modal">
-    <div class="modal-head"><h3 id="modal-title">Memory detail</h3><button type="button" class="x" id="modal-close" aria-label="Close">&times;</button></div>
+    <div class="modal-head"><h3 id="modal-title">Memory Detail</h3><button type="button" class="x" id="modal-close" aria-label="Close">&times;</button></div>
     <div id="modal-body"></div>
     <div class="modal-actions">
       <button type="button" class="btn ghost" id="m-prev">Previous</button>
       <button type="button" class="btn ghost" id="m-next">Next</button>
       <span class="grow"></span>
-      <button type="button" class="btn" id="m-copy">Copy text</button>
+      <button type="button" class="btn" id="m-copy">Copy Text</button>
     </div>
   </div>
 </div>
 
 <div class="scrim" id="help" role="dialog" aria-modal="true" aria-labelledby="help-title">
   <div class="modal">
-    <div class="modal-head"><h3 id="help-title">Keyboard shortcuts</h3><button type="button" class="x" id="help-close" aria-label="Close">&times;</button></div>
+    <div class="modal-head"><h3 id="help-title">Keyboard Shortcuts</h3><button type="button" class="x" id="help-close" aria-label="Close">&times;</button></div>
     <div class="help-grid">
-      <span class="kbd">1 to 6</span><span>Switch section</span>
-      <span class="kbd">/</span><span>Search memories</span>
-      <span class="kbd">r</span><span>Refresh now</span>
-      <span class="kbd">t</span><span>Cycle theme: auto, light, dark</span>
-      <span class="kbd">Left, Right</span><span>Previous or next memory in the detail view</span>
-      <span class="kbd">Esc</span><span>Close dialog</span>
-      <span class="kbd">?</span><span>Show this list</span>
+      <span class="kbd">1-6</span><span>Switch Section</span>
+      <span class="kbd">/</span><span>Search Memories</span>
+      <span class="kbd">r</span><span>Refresh Now</span>
+      <span class="kbd">t</span><span>Cycle Theme: Auto, Light, Dark</span>
+      <span class="kbd">Left, Right</span><span>Previous or Next Memory in the Detail View</span>
+      <span class="kbd">Esc</span><span>Close Dialog</span>
+      <span class="kbd">?</span><span>Show This List</span>
     </div>
   </div>
 </div>
@@ -438,13 +468,15 @@ canvas{display:block}
 const $=(s,r=document)=>r.querySelector(s);
 const $$=(s,r=document)=>Array.from(r.querySelectorAll(s));
 const esc=v=>String(v==null?"":v).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));
+const cap=s=>s?String(s).charAt(0).toUpperCase()+String(s).slice(1):"";
+const titleCase=s=>s==null?"":String(s).replace(/\b\w/g,c=>c.toUpperCase());
 const store={get(k,d){try{const v=localStorage.getItem("soul-dashboard-"+k);return v==null?d:v;}catch(e){return d;}},set(k,v){try{localStorage.setItem("soul-dashboard-"+k,v);}catch(e){}}};
 let online=true;
 async function get(u){const r=await fetch(u,{cache:"no-store"});if(!r.ok)throw new Error(r.status);return r.json();}
 async function load(u){try{const d=await get(u);return d;}catch(e){online=false;return null;}}
 const css=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
 function pct(v){return Math.max(0,Math.min(100,Number(v)||0));}
-function bondLabel(s){if(s>=80)return"Trusted companion";if(s>=60)return"Close friend";if(s>=40)return"Friend";if(s>=20)return"Acquaintance";return"Stranger";}
+function bondLabel(s){if(s>=80)return"Trusted Companion";if(s>=60)return"Close Friend";if(s>=40)return"Friend";if(s>=20)return"Acquaintance";return"Stranger";}
 function ago(d){const days=Math.floor((Date.now()-new Date(d).getTime())/864e5);if(isNaN(days))return"-";if(days>365)return Math.floor(days/365)+"y "+Math.floor((days%365)/30)+"mo";if(days>30)return Math.floor(days/30)+"mo "+(days%30)+"d";return days+"d";}
 function fmtDate(d){if(!d)return"-";const t=new Date(d);return isNaN(t)?esc(d):t.toLocaleDateString("en",{year:"numeric",month:"short",day:"numeric"});}
 function meter(label,val,cls,right){const p=pct(val);return '<div class="meter"><div class="lbl"><span>'+esc(label)+'</span><b>'+esc(right!=null?right:Math.round(p)+"%")+'</b></div><div class="track"><div class="fill '+(cls||"")+'" style="width:'+p+'%"></div></div></div>';}
@@ -470,7 +502,7 @@ function applyTheme(pref){
 function setTheme(pref){store.set("theme",pref);applyTheme(pref);}
 $$("#theme button").forEach(b=>b.addEventListener("click",()=>setTheme(b.dataset.pref)));
 matchMedia("(prefers-color-scheme: dark)").addEventListener("change",()=>{if(document.documentElement.dataset.pref==="system")applyTheme("system");});
-function cycleTheme(){const order=["system","light","dark"];const cur=document.documentElement.dataset.pref||"system";const next=order[(order.indexOf(cur)+1)%3];setTheme(next);toast("Theme: "+(next==="system"?"auto":next));}
+function cycleTheme(){const order=["system","light","dark"];const cur=document.documentElement.dataset.pref||"system";const next=order[(order.indexOf(cur)+1)%3];setTheme(next);toast("Theme: "+(next==="system"?"Auto":cap(next)));}
 
 /* Navigation */
 const TABS=["overview","memories","skills","comms","trust","meta"];
@@ -485,6 +517,7 @@ function showTab(name,focus){
   if(focus)$(".nav button[data-tab="+name+"]").focus();
 }
 $$(".nav button").forEach(b=>b.addEventListener("click",()=>showTab(b.dataset.tab)));
+$$("[data-goto]").forEach(b=>b.addEventListener("click",()=>showTab(b.dataset.goto)));
 $(".nav").addEventListener("keydown",e=>{
   if(e.key!=="ArrowDown"&&e.key!=="ArrowUp"&&e.key!=="ArrowRight"&&e.key!=="ArrowLeft")return;
   const cur=TABS.indexOf(document.activeElement.dataset.tab);if(cur<0)return;
@@ -509,19 +542,20 @@ async function loadIdentity(){
   document.title=(d.name?d.name+" | ":"")+"Soul Dashboard";
   $("#did").textContent=d.did||"";
   $("#id-name").textContent=d.name||"";
-  $("#id-arch").textContent=d.archetype||"";
-  $("#id-persona").textContent=d.persona||"";
+  $("#id-arch").textContent=titleCase(d.archetype);
+  $("#id-persona").textContent=cap(d.persona);
   $("#id-born").textContent=fmtDate(d.born);
   $("#id-age").textContent=d.born?ago(d.born):"-";
-  $("#id-values").innerHTML=(d.core_values||[]).map(v=>'<span class="chip">'+esc(v)+'</span>').join("");
-  $("#lifecycle").textContent=d.lifecycle||"-";
+  $("#id-values").innerHTML=(d.core_values||[]).map(v=>'<span class="chip">'+esc(titleCase(v))+'</span>').join("");
+  $("#lifecycle").textContent=d.lifecycle?titleCase(d.lifecycle):"-";
 }
 async function loadState(){
   const d=await load("/state");if(!d)return;
-  $("#mood").textContent=d.mood||"neutral";
+  $("#mood").textContent=d.mood?titleCase(d.mood):"Neutral";
   $("#energy").textContent=d.energy!=null?Math.round(d.energy)+"%":"-";
-  $("#focus").textContent=d.focus||"-";
-  $("#state-bars").innerHTML=meter("Energy",d.energy,"good")+meter("Social battery",d.social_battery,"info");
+  $("#focus").textContent=d.focus?titleCase(d.focus):"-";
+  $("#state-bars").innerHTML=meter("Energy",d.energy,"good")+meter("Social Battery",d.social_battery,"info")
+    +'<div class="kv-list">'+kv("Mood",d.mood?titleCase(d.mood):"Neutral")+kv("Focus",d.focus?titleCase(d.focus):"-")+kv("Lifecycle",d.lifecycle?titleCase(d.lifecycle):"-")+'</div>';
 }
 
 /* Overview stats */
@@ -530,20 +564,24 @@ async function loadStats(){
   const d=await load("/api/stats");if(!d)return;stats=d;
   const c=d.memory_counts||{},b=d.bond||{};
   const cards=[
-    ["Total",c.total||0,"all memories",""],
-    ["Semantic",c.semantic||0,"facts","semantic"],
-    ["Episodic",c.episodic||0,"events","episodic"],
-    ["Procedural",c.procedural||0,"skills","procedural"],
-    ["Social",c.social||0,"people","social"],
-    ["Interactions",d.interaction_count||0,"observed",null]
+    ["Total",c.total||0,"All Memories",""],
+    ["Semantic",c.semantic||0,"Facts","semantic"],
+    ["Episodic",c.episodic||0,"Events","episodic"],
+    ["Procedural",c.procedural||0,"Skills","procedural"],
+    ["Social",c.social||0,"People","social"],
+    ["Interactions",d.interaction_count||0,"Observed",null]
   ];
   $("#stats").innerHTML=cards.map(([k,v,s,f])=>f===null
     ?'<div class="card"><div class="k">'+k+'</div><div class="v">'+esc(v)+'</div><div class="sub">'+s+'</div></div>'
     :'<button type="button" class="card" data-f="'+f+'" title="Open in memory browser"><div class="k">'+k+'</div><div class="v">'+esc(v)+'</div><div class="sub">'+s+'</div></button>').join("");
   $$("#stats button.card").forEach(c=>c.addEventListener("click",()=>{memFilter=c.dataset.f||"all";showTab("memories");renderMemories();}));
   const st=Math.round(b.strength||0);
-  $("#bond-bars").innerHTML=meter("Strength",st,"",st+" / 100")+'<div class="sub-h">'+esc(b.label||bondLabel(st))+'</div>';
-  $("#id-bond").textContent=b.bonded_to||"nobody yet";
+  const next=[20,40,60,80].find(t=>st<t);
+  $("#bond-bars").innerHTML=meter("Strength",st,"",st+" / 100")
+    +'<div class="kv-list">'+kv("Stage",b.label?titleCase(b.label):bondLabel(st))
+    +kv("Next Stage",next==null?"Highest Stage Reached":bondLabel(next)+" at "+next)
+    +kv("Interactions Observed",d.interaction_count||0)+'</div>';
+  $("#id-bond").textContent=b.bonded_to||"Nobody Yet";
   renderFilters();
 }
 
@@ -592,12 +630,19 @@ $("#radar").addEventListener("mousemove",e=>{
 $("#radar").addEventListener("mouseleave",()=>{hlTrait=null;hideTip();drawRadar();$$("#personality .trait").forEach(t=>t.classList.remove("hl"));});
 
 /* Memories */
-let allMem=[],memFilter="all",memIdx=-1,shownMem=[];
+let allMem=[],memFilter="all",memIdx=-1,shownMem=[],modalMem=[],topMem=[];
 const MEM_TYPES=["semantic","episodic","procedural","social"];
 async function loadMemories(){
   const q=$("#search").value.trim();
   const d=await load("/api/memories?limit=200"+(q?"&q="+encodeURIComponent(q):""));
   allMem=d?(d.memories||[]):[];renderFilters();renderMemories();
+}
+async function loadTopMemories(){
+  const d=await load("/api/memories?limit=5");if(!d)return;topMem=d.memories||[];
+  const ul=$("#ov-mem");
+  if(!topMem.length){ul.innerHTML="<li>"+empty("No Memories Yet")+"</li>";return;}
+  ul.innerHTML=topMem.map((m,i)=>'<li><button type="button" class="mem" data-i="'+i+'"><div class="mem-row"><span class="tag '+esc(m.type)+'">'+esc(m.type)+'</span><span class="imp">Importance '+esc(m.importance)+'</span></div><div class="mem-content">'+esc(cap(m.content))+'</div></button></li>').join("");
+  $$("#ov-mem .mem").forEach(b=>b.addEventListener("click",()=>showMem(Number(b.dataset.i),topMem)));
 }
 function renderFilters(){
   const counts={all:allMem.length};MEM_TYPES.forEach(t=>counts[t]=allMem.filter(m=>m.type===t).length);
@@ -617,20 +662,21 @@ function renderMemories(){
   const ul=$("#mem-list");
   if(!list.length){ul.innerHTML="<li>"+empty(allMem.length?"No memories match these filters":"No memories found")+"</li>";return;}
   ul.innerHTML=list.map((m,i)=>'<li><button type="button" class="mem" data-i="'+i+'"><div class="mem-row"><span class="tag '+esc(m.type)+'">'+esc(m.type)+'</span>'
-    +(m.emotion?'<span class="tag emotion">'+esc(m.emotion)+'</span>':"")+'<span class="imp">importance '+esc(m.importance)+'</span></div><div class="mem-content">'+hl(m.content,q)+'</div></button></li>').join("");
-  $$("#mem-list .mem").forEach(b=>b.addEventListener("click",()=>showMem(Number(b.dataset.i))));
+    +(m.emotion?'<span class="tag emotion">'+esc(m.emotion)+'</span>':"")+'<span class="imp">Importance '+esc(m.importance)+'</span></div><div class="mem-content">'+hl(cap(m.content),q)+'</div></button></li>').join("");
+  $$("#mem-list .mem").forEach(b=>b.addEventListener("click",()=>showMem(Number(b.dataset.i),shownMem)));
 }
-function showMem(i){
-  if(i<0||i>=shownMem.length)return;memIdx=i;const m=shownMem[i];
-  $("#modal-title").textContent="Memory "+(i+1)+" of "+shownMem.length;
-  $("#modal-body").innerHTML=[["ID",m.id],["Type",m.type],["Layer",m.layer],["Domain",m.domain],["Importance",m.importance],["Emotion",m.emotion||"none"],["User",m.user_id||"none"]].map(([k,v])=>kv(k,v)).join("")
-    +'<div class="modal-body-text">'+esc(m.content)+'</div>';
-  $("#m-prev").disabled=i===0;$("#m-next").disabled=i===shownMem.length-1;
+function showMem(i,list){
+  if(list)modalMem=list;
+  if(i<0||i>=modalMem.length)return;memIdx=i;const m=modalMem[i];
+  $("#modal-title").textContent="Memory "+(i+1)+" of "+modalMem.length;
+  $("#modal-body").innerHTML=[["ID",m.id],["Type",titleCase(m.type)],["Layer",titleCase(m.layer)],["Domain",titleCase(m.domain)],["Importance",m.importance],["Emotion",m.emotion?titleCase(m.emotion):"None"],["User",m.user_id||"None"]].map(([k,v])=>kv(k,v)).join("")
+    +'<div class="modal-body-text">'+esc(cap(m.content))+'</div>';
+  $("#m-prev").disabled=i===0;$("#m-next").disabled=i===modalMem.length-1;
   if(!$("#modal").classList.contains("open"))openDlg("#modal");
 }
 $("#m-prev").addEventListener("click",()=>showMem(memIdx-1));
 $("#m-next").addEventListener("click",()=>showMem(memIdx+1));
-$("#m-copy").addEventListener("click",()=>{const m=shownMem[memIdx];if(m)copy(m.content,"Memory copied");});
+$("#m-copy").addEventListener("click",()=>{const m=modalMem[memIdx];if(m)copy(m.content,"Memory copied");});
 $("#mem-export").addEventListener("click",()=>{
   const blob=new Blob([JSON.stringify(shownMem,null,2)],{type:"application/json"});
   const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=((identity&&identity.name)||"soul")+"-memories.json";document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(a.href);
@@ -643,23 +689,28 @@ $("#mem-min").addEventListener("input",e=>{$("#mem-min-v").textContent=e.target.
 
 /* Skills and evolution */
 let skills=[];
-async function loadSkills(){const d=await load("/api/skills");if(!d)return;skills=d.skills||[];renderSkills();}
+async function loadSkills(){const d=await load("/api/skills");if(!d)return;skills=d.skills||[];renderSkills();renderTopSkills();}
 function renderSkills(){
   const s=$("#skill-sort").value,l=skills.slice();
   if(s==="level")l.sort((a,b)=>(b.level-a.level)||(b.xp-a.xp));
   else if(s==="name")l.sort((a,b)=>String(a.name).localeCompare(b.name));
   else l.sort((a,b)=>String(b.last_used||"").localeCompare(String(a.last_used||"")));
   $("#skills-list").innerHTML=l.map(k=>{const p=k.xp_to_next?Math.round(k.xp/k.xp_to_next*100):0;
-    return '<div class="skill"><span class="nm">'+esc(k.name)+'</span><span class="lvl">L'+esc(k.level)+'</span>'+meter("XP",p,"",k.xp+" / "+k.xp_to_next)+'<span class="dt">'+fmtDate(k.last_used)+'</span></div>';}).join("")||empty("No skills yet");
+    return '<div class="skill"><span class="nm">'+esc(cap(k.name))+'</span><span class="lvl">L'+esc(k.level)+'</span>'+meter("XP",p,"",k.xp+" / "+k.xp_to_next)+'<span class="dt">'+fmtDate(k.last_used)+'</span></div>';}).join("")||empty("No Skills Yet");
+}
+function renderTopSkills(){
+  const l=skills.slice().sort((a,b)=>(b.level-a.level)||(b.xp-a.xp)).slice(0,5);
+  $("#ov-skills").innerHTML=l.map(k=>{const p=k.xp_to_next?Math.round(k.xp/k.xp_to_next*100):0;
+    return '<div class="skill compact"><span class="nm">'+esc(cap(k.name))+'</span><span class="lvl">L'+esc(k.level)+'</span>'+meter("XP",p,"",k.xp+" / "+k.xp_to_next)+'</div>';}).join("")||empty("No Skills Yet");
 }
 $("#skill-sort").addEventListener("change",e=>{store.set("skillsort",e.target.value);renderSkills();});
 async function loadEvolution(){
   const d=await load("/api/evolution");if(!d)return;
-  const mut=(d.mutable_traits||[]).map(t=>'<span class="chip">'+esc(t)+'</span>').join("")||'<span class="sub">none</span>';
-  const imm=(d.immutable_traits||[]).map(t=>'<span class="chip lock">'+esc(t)+'</span>').join("")||'<span class="sub">none</span>';
-  $("#evo-info").innerHTML='<div class="badges"><span class="badge">Mode <b>'+esc(d.mode)+'</b></span><span class="badge">Rate <b>'+esc(d.mutation_rate)+'</b></span><span class="badge">Approval <b>'+(d.require_approval?"required":"not required")+'</b></span></div>'
-    +'<div class="sub-h">Mutable traits</div><div class="chips" style="margin-top:0">'+mut+'</div><div class="sub-h">Immutable traits</div><div class="chips" style="margin-top:0">'+imm+'</div>';
-  $("#mutations").innerHTML=(d.pending||[]).map(m=>'<div class="mut"><div class="tr">'+esc(m.trait)+'</div><div class="ch"><span class="old">'+esc(m.old_value)+'</span> to <span class="new">'+esc(m.new_value)+'</span></div><div class="why">'+esc(m.reason)+'</div></div>').join("")||empty("No pending mutations");
+  const mut=(d.mutable_traits||[]).map(t=>'<span class="chip">'+esc(cap(t))+'</span>').join("")||'<span class="sub">None</span>';
+  const imm=(d.immutable_traits||[]).map(t=>'<span class="chip lock">'+esc(cap(t))+'</span>').join("")||'<span class="sub">None</span>';
+  $("#evo-info").innerHTML='<div class="badges"><span class="badge">Mode <b>'+esc(titleCase(d.mode))+'</b></span><span class="badge">Rate <b>'+esc(d.mutation_rate)+'</b></span><span class="badge">Approval <b>'+(d.require_approval?"Required":"Not Required")+'</b></span></div>'
+    +'<div class="sub-h">Mutable Traits</div><div class="chips" style="margin-top:0">'+mut+'</div><div class="sub-h">Immutable Traits</div><div class="chips" style="margin-top:0">'+imm+'</div>';
+  $("#mutations").innerHTML=(d.pending||[]).map(m=>'<div class="mut"><div class="tr">'+esc(cap(m.trait))+'</div><div class="ch"><span class="old">'+esc(m.old_value)+'</span> to <span class="new">'+esc(m.new_value)+'</span></div><div class="why">'+esc(cap(m.reason))+'</div></div>').join("")||empty("No Pending Mutations");
 }
 let evals=[],evalBars=[];
 async function loadEvaluations(){const d=await load("/api/evaluations");if(!d)return;evals=d.evaluations||[];drawEval();}
@@ -690,15 +741,15 @@ $("#eval-chart").addEventListener("mouseleave",hideTip);
 /* Communication */
 async function loadComms(){
   const d=await load("/api/communication");if(!d)return;
-  $("#comm-style").innerHTML=[["Warmth",d.warmth],["Verbosity",d.verbosity],["Humor",d.humor_style],["Emoji usage",d.emoji_usage]].map(([k,v])=>'<div class="comm-item"><div class="ck">'+k+'</div><div class="cv">'+esc(v)+'</div></div>').join("");
+  $("#comm-style").innerHTML=[["Warmth",d.warmth],["Verbosity",d.verbosity],["Humor",d.humor_style],["Emoji Usage",d.emoji_usage]].map(([k,v])=>'<div class="comm-item"><div class="ck">'+k+'</div><div class="cv">'+esc(titleCase(v))+'</div></div>').join("");
   const b=d.biorhythms||{};
-  $("#bio-meters").innerHTML='<div class="meter"><div class="lbl"><span>Chronotype</span><b>'+esc(b.chronotype||"-")+'</b></div></div>'
-    +meter("Mood inertia",(b.mood_inertia||0)*100,"warn")+meter("Mood sensitivity",(b.mood_sensitivity||0)*100,"warn");
+  $("#bio-meters").innerHTML='<div class="meter"><div class="lbl"><span>Chronotype</span><b>'+esc(b.chronotype?titleCase(b.chronotype):"-")+'</b></div></div>'
+    +meter("Mood Inertia",(b.mood_inertia||0)*100,"warn")+meter("Mood Sensitivity",(b.mood_sensitivity||0)*100,"warn");
 }
 async function loadSelfModel(){
   const d=await load("/api/self-model");if(!d)return;
   const e=Object.entries(d.self_images||{}).sort((a,b)=>(b[1].confidence||0)-(a[1].confidence||0));
-  $("#self-model").innerHTML=e.map(([k,v])=>{const p=Math.round(pct((v.confidence||0)*100));return '<div class="trait" title="'+esc(v.evidence_count||0)+' pieces of evidence"><div class="label">'+esc(k)+'</div><div class="track"><div class="fill" style="width:'+p+'%"></div></div><div class="val">'+p+'%</div></div>';}).join("")||empty("No self-model data");
+  $("#self-model").innerHTML=e.map(([k,v])=>{const p=Math.round(pct((v.confidence||0)*100));return '<div class="trait" title="'+esc(v.evidence_count||0)+' Pieces of Evidence"><div class="label">'+esc(titleCase(k))+'</div><div class="track"><div class="fill" style="width:'+p+'%"></div></div><div class="val">'+p+'%</div></div>';}).join("")||empty("No Self-Model Data Yet");
 }
 
 /* Trust chain */
@@ -712,8 +763,8 @@ function renderTrust(){
   $$("#tc-filters .fbtn").forEach(b=>b.addEventListener("click",()=>{chainFilter=b.dataset.k;renderTrust();}));
   const list=chain.filter(e=>(chainFilter==="all"||chainKind(e.action)===chainFilter)&&(!q||String(e.action).toLowerCase().includes(q)));
   $("#timeline").innerHTML=list.map(e=>{const open=chainOpen.has(e.seq),h=String(e.hash||"");
-    return '<li class="'+chainKind(e.action)+'"><button type="button" class="tl-row" data-s="'+esc(e.seq)+'" aria-expanded="'+open+'"><span class="tl-act">'+esc(e.action)+'</span><span class="tl-time">'+fmtDate(e.timestamp)+'</span></button>'
-      +(open?'<div class="tl-detail"><div>Sequence <b>'+esc(e.seq)+'</b>, algorithm <b>'+esc(e.algorithm||"-")+'</b></div><div class="hash">'+esc(h)+'</div><button type="button" class="btn ghost" data-h="'+esc(h)+'">Copy hash</button></div>':"")+'</li>';}).join("")||'<li class="none">'+empty(chain.length?"No entries match this filter":"No trust chain entries")+'</li>';
+    return '<li class="'+chainKind(e.action)+'"><button type="button" class="tl-row" data-s="'+esc(e.seq)+'" aria-expanded="'+open+'"><span class="tl-act">'+esc(cap(e.action))+'</span><span class="tl-time">'+fmtDate(e.timestamp)+'</span></button>'
+      +(open?'<div class="tl-detail"><div>Sequence <b>'+esc(e.seq)+'</b>, Algorithm <b>'+esc(e.algorithm||"-")+'</b></div><div class="hash">'+esc(h)+'</div><button type="button" class="btn ghost" data-h="'+esc(h)+'">Copy Hash</button></div>':"")+'</li>';}).join("")||'<li class="none">'+empty(chain.length?"No entries match this filter":"No trust chain entries")+'</li>';
   $$("#timeline .tl-row").forEach(b=>b.addEventListener("click",()=>{const s=Number(b.dataset.s);chainOpen.has(s)?chainOpen.delete(s):chainOpen.add(s);renderTrust();}));
   $$("#timeline [data-h]").forEach(b=>b.addEventListener("click",()=>copy(b.dataset.h,"Hash copied")));
 }
@@ -722,9 +773,9 @@ $("#tc-search").addEventListener("input",renderTrust);
 /* Metadata */
 async function loadMeta(){
   const d=await load("/api/metadata");if(!d)return;
-  $("#meta-table").innerHTML=[["Version",d.version],["DID",d.did],["Lifecycle",d.lifecycle],["Incarnation",d.incarnation],["Encrypted",d.encrypted?"Yes":"No"]].map(([k,v])=>kv(k,v)).join("");
+  $("#meta-table").innerHTML=[["Version",d.version],["DID",d.did],["Lifecycle",titleCase(d.lifecycle)],["Incarnation",d.incarnation],["Encrypted",d.encrypted?"Yes":"No"]].map(([k,v])=>kv(k,v)).join("");
   const m=d.memory_config||{};
-  $("#mem-config").innerHTML=[["Max episodic",m.episodic_max_entries],["Max semantic",m.semantic_max_facts],["Importance threshold",m.importance_threshold],["Consolidation interval",m.consolidation_interval]].map(([k,v])=>kv(k,v==null?"-":v)).join("");
+  $("#mem-config").innerHTML=[["Max Episodic",m.episodic_max_entries],["Max Semantic",m.semantic_max_facts],["Importance Threshold",m.importance_threshold],["Consolidation Interval",m.consolidation_interval]].map(([k,v])=>kv(k,v==null?"-":v)).join("");
 }
 
 /* Refresh loop */
@@ -732,8 +783,8 @@ let busy=false,timer=null;
 async function refresh(manual){
   if(busy)return;busy=true;online=true;
   const btn=$("#refresh");btn.disabled=true;
-  await Promise.all([loadIdentity(),loadState(),loadStats(),loadPersonality(),loadMemories(),loadSkills(),loadEvolution(),loadEvaluations(),loadComms(),loadSelfModel(),loadTrust(),loadMeta()]);
-  $("#updated").innerHTML='<span class="dot'+(online?"":" off")+'"></span>'+(online?"updated "+new Date().toLocaleTimeString():"connection lost, retrying");
+  await Promise.all([loadIdentity(),loadState(),loadStats(),loadPersonality(),loadMemories(),loadTopMemories(),loadSkills(),loadEvolution(),loadEvaluations(),loadComms(),loadSelfModel(),loadTrust(),loadMeta()]);
+  $("#updated").innerHTML='<span class="dot'+(online?"":" off")+'"></span>'+(online?"Updated "+new Date().toLocaleTimeString():"Connection lost, retrying");
   btn.disabled=false;busy=false;
   if(manual&&online)toast("Refreshed");
 }

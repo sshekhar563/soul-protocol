@@ -170,3 +170,30 @@ def test_metadata_returns_config(client):
     mc = data["memory_config"]
     assert "episodic_max_entries" in mc
     assert "semantic_max_facts" in mc
+
+
+def test_dashboard_links_favicon_and_legal_pages(client):
+    html = client.get("/dashboard").text
+    assert 'href="/favicon.svg"' in html
+    assert 'href="/privacy"' in html
+    assert 'href="/terms"' in html
+
+
+@pytest.mark.parametrize("path", ["/favicon.svg", "/favicon.ico"])
+def test_favicon_served_as_svg(client, path):
+    r = client.get(path)
+    assert r.status_code == 200
+    assert r.headers["content-type"].startswith("image/svg+xml")
+    assert r.text.startswith("<svg")
+
+
+@pytest.mark.parametrize(
+    ("path", "title"),
+    [("/privacy", "Privacy Policy"), ("/terms", "Terms and Conditions")],
+)
+def test_legal_pages(client, path, title):
+    r = client.get(path)
+    assert r.status_code == 200
+    assert "text/html" in r.headers["content-type"]
+    assert f"<h1>{title}</h1>" in r.text
+    assert 'href="/dashboard"' in r.text

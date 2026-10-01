@@ -17,12 +17,13 @@ from typing import Any
 import httpx
 from starlette.applications import Starlette
 from starlette.requests import Request
-from starlette.responses import HTMLResponse, JSONResponse
+from starlette.responses import HTMLResponse, JSONResponse, Response
 from starlette.routing import Route
 
 from ..runtime.soul import Soul
 from ..runtime.types import Interaction, MemoryType
 from ._dashboard import DASHBOARD_HTML
+from ._legal import FAVICON_SVG, PRIVACY_HTML, TERMS_HTML
 
 try:
     from ..runtime.middleware import AutoObserveMiddleware
@@ -403,6 +404,19 @@ def create_app(
     async def dashboard(request: Request) -> HTMLResponse:
         return HTMLResponse(DASHBOARD_HTML)
 
+    async def privacy(request: Request) -> HTMLResponse:
+        return HTMLResponse(PRIVACY_HTML)
+
+    async def terms(request: Request) -> HTMLResponse:
+        return HTMLResponse(TERMS_HTML)
+
+    async def favicon(request: Request) -> Response:
+        return Response(
+            FAVICON_SVG,
+            media_type="image/svg+xml",
+            headers={"Cache-Control": "public, max-age=86400"},
+        )
+
     async def api_personality(request: Request) -> JSONResponse:
         p = soul.dna.personality
         return _json(
@@ -614,6 +628,10 @@ def create_app(
         Route("/turn", turn, methods=["POST"]),
         Route("/v1/chat/completions", chat_completions, methods=["POST"]),
         Route("/dashboard", dashboard, methods=["GET"]),
+        Route("/privacy", privacy, methods=["GET"]),
+        Route("/terms", terms, methods=["GET"]),
+        Route("/favicon.svg", favicon, methods=["GET"]),
+        Route("/favicon.ico", favicon, methods=["GET"]),
         Route("/api/personality", api_personality, methods=["GET"]),
         Route("/api/memories", api_memories, methods=["GET"]),
         Route("/api/stats", api_stats, methods=["GET"]),

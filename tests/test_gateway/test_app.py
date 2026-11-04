@@ -136,3 +136,18 @@ def test_recall_limit_is_capped(client):
 def test_api_memories_bad_limit_is_400(client):
     r = client.get("/api/memories", params={"limit": "abc"})
     assert r.status_code == 400
+
+
+@pytest.mark.parametrize(
+    "path,body",
+    [
+        ("/remember", {"content": {"a": 1}}),
+        ("/remember", {"content": "x", "domain": {"a": 1}}),
+        ("/observe", {"user_input": {"a": 1}}),
+        ("/observe", {"user_input": "hi", "agent_output": {"a": 1}}),
+    ],
+)
+def test_non_string_fields_are_400(client, path, body):
+    r = client.post(path, json=body)
+    assert r.status_code == 400
+    assert "error" in r.json()

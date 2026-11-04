@@ -60,7 +60,7 @@ engine = []
 mcp = [
     "fastmcp>=2.0",
 ]
-gateway = ["starlette", "httpx", "uvicorn"]
+gateway = ["starlette>=1.0", "httpx>=0.28", "uvicorn>=0.44"]
 dspy = []  # dspy depends on litellm which breaks uv sync — install dspy manually if needed
 graph = ["networkx>=3.0"]
 vector = ["numpy>=1.24"]

@@ -19,22 +19,12 @@ from starlette.testclient import TestClient  # noqa: E402
 from soul_protocol.gateway import create_app  # noqa: E402
 from soul_protocol.gateway.app import LLMProxyConfig  # noqa: E402
 from soul_protocol.runtime.soul import Soul  # noqa: E402
-from soul_protocol.runtime.types import MemoryEntry, MemoryType  # noqa: E402
 
 
 @pytest.fixture
 def proxy():
     soul = asyncio.run(Soul.birth(name="Proxy", archetype="proxy test"))
-    asyncio.run(
-        soul._memory.add(
-            MemoryEntry(
-                type=MemoryType.SEMANTIC,
-                content="The user's favorite language is Python",
-                importance=8,
-                domain="default",
-            )
-        )
-    )
+    asyncio.run(soul.remember("The user's favorite language is Python", importance=8))
 
     captured: dict[str, dict] = {}
 

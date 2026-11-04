@@ -20,6 +20,7 @@ from dataclasses import dataclass
 from typing import Any
 
 import httpx
+from pydantic import ValidationError
 from starlette.applications import Starlette
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, JSONResponse, Response
@@ -152,13 +153,24 @@ def _int_param(value: Any, name: str, default: int, lo: int, hi: int) -> int:
 
 
 def _handles_bad_request(handler):
-    """Turn a ``_BadRequest`` raised inside ``handler`` into a JSON error response."""
+    """Turn bad client input raised inside ``handler`` into a JSON error response.
+
+    Covers ``_BadRequest`` from the request helpers and pydantic
+    ``ValidationError`` from the Soul API (e.g. a non-string ``content`` or
+    ``domain`` on ``/remember``, or a non-string ``user_input`` on ``/observe``),
+    so wrong-typed body fields come back as 400 instead of 500.
+    """
 
     async def wrapper(request: Request) -> Response:
         try:
             return await handler(request)
         except _BadRequest as exc:
             return _json({"error": exc.message}, status=exc.status)
+        except ValidationError as exc:
+            fields = sorted(
+                {".".join(str(p) for p in err["loc"]) or "body" for err in exc.errors()}
+            )
+            return _json({"error": f"invalid field(s): {', '.join(fields)}"}, status=400)
 
     return wrapper
 

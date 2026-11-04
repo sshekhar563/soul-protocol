@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 
 import pytest
@@ -374,8 +375,143 @@ class TestJevDecider:
             return real_import(name, *args, **kwargs)
 
         monkeypatch.setattr(builtins, "__import__", fake_import)
-        with pytest.raises(ImportError, match="pydantic-ai-slim"):
+        with pytest.raises(ImportError, match=r"soul-protocol\[decide-jev\]"):
             await JevDecider().decide(ContradictionRequest(new_content="x", existing=[STEAK]))
+
+    async def test_pydantic_ai_runner_contract(self, monkeypatch):
+        """The default runner builds one Agent per question type and reads
+        ``result.output`` + ``result.response.provider_details["confidence"]``."""
+        import sys
+        import types
+
+        created: list[tuple[str, type]] = []
+        prompts: list[str] = []
+
+        class FakeAgent:
+            def __init__(self, model, *, output_type):
+                created.append((model, output_type))
+                self.output_type = output_type
+
+            async def run(self, state):
+                prompts.append(state)
+                return types.SimpleNamespace(
+                    output=self.output_type(contradicts=True),
+                    response=types.SimpleNamespace(
+                        provider_details={"confidence": {"contradicts": 0.91}}
+                    ),
+                )
+
+        monkeypatch.setitem(sys.modules, "pydantic_ai", types.SimpleNamespace(Agent=FakeAgent))
+        decider = JevDecider("typesafe:jev-test")
+        decision = await decider.decide(
+            ContradictionRequest(new_content="I'm vegetarian now", existing=[STEAK, DELHI])
+        )
+        assert created == [("typesafe:jev-test", ConflictQuestion)]  # agent is reused
+        assert len(prompts) == 2
+        assert all(p.startswith("OLD: ") and "NEW: I'm vegetarian now" in p for p in prompts)
+        assert decision.confidence == 0.91
+        assert {f.old_memory_id for f in decision.value.findings} == {"steak", "delhi"}
+
+    async def test_pydantic_ai_runner_without_provider_details_is_unsure(self, monkeypatch):
+        import sys
+        import types
+
+        class FakeAgent:
+            def __init__(self, model, *, output_type):
+                self.output_type = output_type
+
+            async def run(self, state):
+                return types.SimpleNamespace(
+                    output=self.output_type(contradicts=True),
+                    response=types.SimpleNamespace(provider_details=None),
+                )
+
+        monkeypatch.setitem(sys.modules, "pydantic_ai", types.SimpleNamespace(Agent=FakeAgent))
+        decision = await JevDecider().decide(
+            ContradictionRequest(new_content="x", existing=[STEAK])
+        )
+        assert decision.confidence is None
+
+    @pytest.mark.parametrize("bad", [1.5, -0.1, "0.9", True, float("nan"), None, [0.9]])
+    async def test_bad_contradiction_confidence_is_unsure(self, bad):
+        async def run(state, output_type):
+            return ConflictQuestion(contradicts=True), {"contradicts": bad}
+
+        decision = await JevDecider(runner=run).decide(
+            ContradictionRequest(new_content="x", existing=[STEAK])
+        )
+        assert decision.confidence is None
+        assert decision.value.findings == []
+
+    @pytest.mark.parametrize("bad", [1.5, "0.9", float("inf"), False])
+    async def test_bad_significance_confidence_is_unsure(self, bad):
+        answer = SignificanceQuestion(
+            novelty=1, emotional_intensity=1, goal_relevance=1, content_richness=1
+        )
+        conf = {
+            "novelty": 0.9,
+            "emotional_intensity": bad,
+            "goal_relevance": 0.9,
+            "content_richness": 0.9,
+        }
+        decision = await JevDecider(runner=_jev_runner(sig=(answer, conf))).decide(
+            SignificanceRequest(interaction=Interaction.from_pair("hi", "hello"))
+        )
+        assert decision.confidence is None
+
+    async def test_wrong_answer_type_raises_for_both_questions(self):
+        answer = SignificanceQuestion(
+            novelty=1, emotional_intensity=1, goal_relevance=1, content_richness=1
+        )
+
+        async def run(state, output_type):
+            # Always the "other" model, as a misbehaving runner would.
+            if output_type is ConflictQuestion:
+                return answer, {"contradicts": 0.9}
+            return ConflictQuestion(contradicts=True), {"novelty": 0.9}
+
+        decider = JevDecider(runner=run)
+        with pytest.raises(TypeError, match="expected ConflictQuestion"):
+            await decider.decide(ContradictionRequest(new_content="x", existing=[STEAK]))
+        with pytest.raises(TypeError, match="expected SignificanceQuestion"):
+            await decider.decide(
+                SignificanceRequest(interaction=Interaction.from_pair("hi", "hello"))
+            )
+
+    async def test_hung_call_times_out(self):
+        async def run(state, output_type):
+            await asyncio.sleep(10)
+
+        decider = JevDecider(runner=run, timeout=0.05)
+        with pytest.raises(asyncio.TimeoutError):
+            await decider.decide(ContradictionRequest(new_content="x", existing=[STEAK]))
+        with pytest.raises(asyncio.TimeoutError):
+            await decider.decide(
+                SignificanceRequest(interaction=Interaction.from_pair("hi", "hello"))
+            )
+
+    async def test_contradiction_respects_max_concurrency(self):
+        in_flight = 0
+        peak = 0
+
+        async def run(state, output_type):
+            nonlocal in_flight, peak
+            in_flight += 1
+            peak = max(peak, in_flight)
+            await asyncio.sleep(0.01)
+            in_flight -= 1
+            return ConflictQuestion(contradicts=False), {"contradicts": 0.9}
+
+        existing = [_m(f"m{i}", f"User likes food number {i}") for i in range(8)]
+        decider = JevDecider(runner=run, max_concurrency=2, max_candidates=8)
+        await decider.decide(ContradictionRequest(new_content="User likes food", existing=existing))
+        assert peak == 2
+
+    def test_rejects_bad_timeout_and_concurrency(self):
+        with pytest.raises(ValueError):
+            JevDecider(timeout=0)
+        with pytest.raises(ValueError):
+            JevDecider(max_concurrency=0)
 
 
 def test_user_aliases_are_normalized():

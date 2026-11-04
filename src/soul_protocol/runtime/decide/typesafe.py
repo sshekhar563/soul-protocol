@@ -3,12 +3,16 @@
 #   (bool / pick-one / small rubric) with calibrated per-field confidence instead of
 #   generating text. Uses Pydantic AI's TypeSafe integration, where each question is
 #   a Pydantic model whose field docstrings are the questions. Requires
-#   ``pip install "pydantic-ai-slim[typesafe]"`` and TYPESAFE_API_KEY. Memory text is
+#   ``pip install 'soul-protocol[decide-jev]'`` and TYPESAFE_API_KEY. Memory text is
 #   sent to TypeSafe's API, so only attach this decider with the user's consent.
+# Updated: feat/jev-decider (#325 review) — per-call timeout and concurrency cap on
+#   hosted calls, provider_details confidences validated before use, a wrong answer
+#   type raises TypeError for both questions, privacy note in the class docstring.
 
 from __future__ import annotations
 
 import asyncio
+import math
 from collections.abc import Awaitable, Callable
 from typing import Any, Literal
 
@@ -35,6 +39,8 @@ from soul_protocol.runtime.types import SignificanceScore
 
 DEFAULT_JEV_MODEL: str = "typesafe:jev-latest"
 DEFAULT_JEV_MAX_CANDIDATES: int = 10
+DEFAULT_JEV_TIMEOUT: float = 30.0
+DEFAULT_JEV_MAX_CONCURRENCY: int = 4
 RUBRIC_MAX: int = 4
 
 # (state, question model) -> (answer, per-field confidence)
@@ -67,13 +73,29 @@ class SignificanceQuestion(BaseModel):
     """How many concrete facts, names, dates or numbers does it contain? 0 = none, 4 = many."""
 
 
+def _confidence(value: Any) -> float | None:
+    """Return ``value`` as a confidence if it is a finite number in [0, 1], else None.
+
+    ``provider_details`` comes straight from the hosted API, so anything else
+    (a string, a bool, NaN, 1.2) counts as "no confidence" instead of reaching
+    ``Decision`` / ``ContradictionFinding`` validation or ``min()``.
+    """
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    value = float(value)
+    if not math.isfinite(value) or not 0.0 <= value <= 1.0:
+        return None
+    return value
+
+
 def _pydantic_ai_runner(model: str) -> JevRunner:
     try:
         from pydantic_ai import Agent
     except ImportError as e:
         raise ImportError(
             "JevDecider requires Pydantic AI with the TypeSafe extra. "
-            'Install with: pip install "pydantic-ai-slim[typesafe]"'
+            "Install with: pip install 'soul-protocol[decide-jev]' "
+            "(or 'pydantic-ai-slim[typesafe]')"
         ) from e
 
     agents: dict[type[BaseModel], Any] = {}
@@ -84,13 +106,18 @@ def _pydantic_ai_runner(model: str) -> JevRunner:
             agent = agents[output_type] = Agent(model, output_type=output_type)
         result = await agent.run(state)
         details = getattr(result.response, "provider_details", None) or {}
-        return result.output, dict(details.get("confidence") or {})
+        confidence = details.get("confidence") if isinstance(details, dict) else None
+        return result.output, dict(confidence) if isinstance(confidence, dict) else {}
 
     return run
 
 
 class JevDecider:
     """Contradiction + significance decider backed by TypeSafe's Jev.
+
+    Privacy: memory text is sent to TypeSafe's API, so only attach this decider
+    with the user's consent. ``NLIContradictionDecider`` keeps contradiction
+    checks on the machine.
 
     Args:
         model: Pydantic AI model string. Pin a version (e.g. ``typesafe:jev-1.13.0``)
@@ -99,6 +126,11 @@ class JevDecider:
             to a Pydantic AI Agent per question type.
         max_candidates: Maximum existing memories checked per contradiction request.
         significance_threshold: Overall-significance bar for ``significant``.
+        timeout: Seconds to wait for each hosted call. On expiry the call raises
+            ``asyncio.TimeoutError``, which the chain records as an error before
+            falling through. ``None`` disables the timeout.
+        max_concurrency: Maximum hosted calls in flight at once during one
+            contradiction check.
     """
 
     name = "jev"
@@ -110,11 +142,19 @@ class JevDecider:
         runner: JevRunner | None = None,
         max_candidates: int = DEFAULT_JEV_MAX_CANDIDATES,
         significance_threshold: float = DEFAULT_SIGNIFICANCE_THRESHOLD,
+        timeout: float | None = DEFAULT_JEV_TIMEOUT,
+        max_concurrency: int = DEFAULT_JEV_MAX_CONCURRENCY,
     ) -> None:
+        if timeout is not None and timeout <= 0:
+            raise ValueError("timeout must be positive or None")
+        if max_concurrency < 1:
+            raise ValueError("max_concurrency must be at least 1")
         self._model = model
         self._runner = runner
         self._max_candidates = max_candidates
         self._significance_threshold = significance_threshold
+        self._timeout = timeout
+        self._max_concurrency = max_concurrency
 
     def supports(self, kind: DecisionKind) -> bool:
         return kind in (DecisionKind.CONTRADICTION, DecisionKind.SIGNIFICANCE)
@@ -123,6 +163,19 @@ class JevDecider:
         if self._runner is None:
             self._runner = _pydantic_ai_runner(self._model)
         return self._runner
+
+    async def _ask(
+        self,
+        state: str,
+        question: type[BaseModel],
+        limit: asyncio.Semaphore | None = None,
+    ) -> tuple[BaseModel, dict[str, float]]:
+        """Send one question to Jev, bounded by ``timeout`` and an optional semaphore."""
+        run = self._run()
+        if limit is None:
+            return await asyncio.wait_for(run(state, question), self._timeout)
+        async with limit:
+            return await asyncio.wait_for(run(state, question), self._timeout)
 
     async def decide(self, request: DecisionRequest) -> Decision | None:
         if isinstance(request, ContradictionRequest):
@@ -141,10 +194,12 @@ class JevDecider:
                 source=self.name,
                 reason="no live memories to compare",
             )
-        run = self._run()
+        limit = asyncio.Semaphore(self._max_concurrency)
         answers = await asyncio.gather(
             *(
-                run(f"OLD: {entry.content}\nNEW: {request.new_content}", ConflictQuestion)
+                self._ask(
+                    f"OLD: {entry.content}\nNEW: {request.new_content}", ConflictQuestion, limit
+                )
                 for entry in candidates
             )
         )
@@ -152,11 +207,13 @@ class JevDecider:
         findings: list[ContradictionFinding] = []
         confidences: list[float] = []
         for entry, (answer, conf) in zip(candidates, answers, strict=True):
-            c = conf.get("contradicts")
+            if not isinstance(answer, ConflictQuestion):
+                raise TypeError(f"Jev returned {type(answer).__name__}, expected ConflictQuestion")
+            c = _confidence(conf.get("contradicts"))
             if c is None:
                 return self._unsure_contradiction()
             confidences.append(c)
-            if isinstance(answer, ConflictQuestion) and answer.contradicts:
+            if answer.contradicts:
                 findings.append(
                     ContradictionFinding(
                         old_memory_id=entry.id, reason="Jev judged contradiction", confidence=c
@@ -175,7 +232,7 @@ class JevDecider:
             value=ContradictionVerdict(),
             confidence=None,
             source=self.name,
-            reason="Jev returned no confidence",
+            reason="Jev returned no usable confidence",
         )
 
     async def _significance(self, request: SignificanceRequest) -> Decision[SignificanceVerdict]:
@@ -186,7 +243,7 @@ class JevDecider:
             f"Recent memories:\n{recent}\n\n"
             f"User: {interaction.user_input}\nAgent: {interaction.agent_output}"
         )
-        answer, conf = await self._run()(state, SignificanceQuestion)
+        answer, conf = await self._ask(state, SignificanceQuestion)
         if not isinstance(answer, SignificanceQuestion):
             raise TypeError(f"Jev returned {type(answer).__name__}, expected SignificanceQuestion")
         score = SignificanceScore(
@@ -196,7 +253,7 @@ class JevDecider:
             content_richness=answer.content_richness / RUBRIC_MAX,
         )
         token_count = len(tokenize(f"{interaction.user_input} {interaction.agent_output}"))
-        field_conf = [conf[f] for f in SignificanceQuestion.model_fields if f in conf]
+        field_conf = [_confidence(conf.get(f)) for f in SignificanceQuestion.model_fields]
         return Decision(
             kind=DecisionKind.SIGNIFICANCE,
             value=SignificanceVerdict(
@@ -206,8 +263,6 @@ class JevDecider:
                     score, threshold=self._significance_threshold, token_count=token_count
                 ),
             ),
-            confidence=min(field_conf)
-            if len(field_conf) == len(SignificanceQuestion.model_fields)
-            else None,
+            confidence=None if None in field_conf else min(field_conf),
             source=self.name,
         )

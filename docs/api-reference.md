@@ -4,6 +4,8 @@
      Updated: feat/soul-instinct (#322) — Added the Soul Instinct section: the
        deciders= keyword, use_deciders(), deciders, instinct, decide(),
        uncertain_memories(), review_instincts() and dream(review_instincts=).
+     Updated: feat/jev-decider (#325) — JevDecider note (hosted, sends memory text
+       to TypeSafe's API) next to NLIContradictionDecider.
      Updated: 2026-08-10 — (#290): Documented grant_xp_for_procedure_use(),
      curate_agent_procedures(), MemoryProvenance enum, Soul.remember() provenance kwarg.
      Updated: 2026-04-29 — v0.5.0 (#142): Added Optimize section documenting
@@ -775,6 +777,8 @@ Attach deciders, most preferred first. Each `observe()` decision is offered to t
 from soul_protocol.runtime.decide import NLIContradictionDecider
 soul.use_deciders([NLIContradictionDecider()])
 ```
+
+`NLIContradictionDecider` runs locally. `JevDecider(model="typesafe:jev-latest", *, max_candidates=10, timeout=30.0, max_concurrency=4)` answers contradiction and significance with TypeSafe's hosted Jev model (`pip install 'soul-protocol[decide-jev]'`, `TYPESAFE_API_KEY`). **It sends memory text to TypeSafe's API**, so attach it only with the user's consent. See [Soul Instinct › Privacy](soul-instinct.md#privacy).
 
 #### `soul.deciders` / `soul.instinct`
 

@@ -1,5 +1,5 @@
 <!-- Covers: Soul Instinct decision layer — what it is, the Decider protocol, the
-     DeciderChain fallback, built-in deciders (heuristic, local NLI, LLM),
+     DeciderChain fallback, built-in deciders (heuristic, local NLI, LLM, hosted Jev),
      contradiction rule merging,
      uncertain-memory markers, review_instincts() and dream() review, per-soul
      calibration persisted in the .soul file, personality modulation, settings,
@@ -7,7 +7,9 @@
      Created: feat/soul-instinct
      Updated: feat/soul-instinct (#322 review) — Contradiction deciders add to the
        rules instead of replacing them; original_confidence restore on review;
-       older-version compatibility note; JevDecider moved to its own PR. -->
+       older-version compatibility note; JevDecider moved to its own PR.
+     Updated: feat/jev-decider (#325 review) — JevDecider row, privacy note,
+       timeout / concurrency, limitations. -->
 
 # Soul Instinct
 
@@ -80,6 +82,7 @@ decision.attempts         # what every consulted decider said
 | `HeuristicDecider` | all four | locally, rules | built in |
 | `NLIContradictionDecider` | contradiction | locally, small NLI cross-encoder (`cross-encoder/nli-deberta-v3-xsmall`), no data leaves the machine | `pip install 'soul-protocol[embeddings-st]'` |
 | `EngineDecider` | contradiction, significance | any `CognitiveEngine` (Claude, GPT, Ollama, MCP sampling) | engine extra |
+| `JevDecider` | contradiction, significance | hosted: TypeSafe AI's Jev decision model via Pydantic AI. **Memory text is sent to TypeSafe's API.** Needs `TYPESAFE_API_KEY` | `pip install 'soul-protocol[decide-jev]'` |
 
 `CognitiveDecider` wraps the soul's original path (LLM engine → DSPy gate → heuristics) and is always the chain's final fallback inside `observe()`.
 
@@ -195,6 +198,8 @@ See [MCP Server](mcp-server.md#soul_decide).
 
 `NLIContradictionDecider` and `HeuristicDecider` run entirely on the user's machine. `EngineDecider` sends memory text to its LLM provider — attach it only with the user's consent.
 
+`JevDecider` sends memory text to TypeSafe's hosted API: for contradictions, the new statement plus up to `max_candidates` (default 10) related live memories, one pair per request; for significance, the turn, the soul's core values and the last five memories. Attach it only with the user's consent. Each call has a `timeout` (default 30 s), and at most `max_concurrency` (default 4) calls run at once. A call that times out raises, so the chain records an error and falls through to the next decider.
+
 The `soul instinct` CLI downloads the two local models (about 380 MB) on first run and says so before it starts; later runs work offline.
 
 ## Compatibility
@@ -205,6 +210,7 @@ The `instinct` block (settings and learned calibration) is a new optional field 
 
 - Decisions the fallback made *without* storing anything (e.g. an unsure "not significant" turn that was then dropped) leave nothing to review.
 - Calibration only learns from reviewed decisions; by default those are the unsure ones. Use `review_instincts(include_confident=True)` occasionally to calibrate the high-confidence bands too.
-- Model deciders compare against at most 10 (`EngineDecider`) or 20 (`NLIContradictionDecider`) related live memories per decision.
+- Model deciders compare against at most 10 (`EngineDecider`, `JevDecider`) or 20 (`NLIContradictionDecider`) related live memories per decision.
+- `JevDecider` has only been tested against a fake Pydantic AI runner, not the live Jev API. Its default model `typesafe:jev-latest` is a moving alias; pin a version (e.g. `typesafe:jev-1.13.0`) once your thresholds are tuned.
 - `metadata["instinct"]` holds one marker per memory. If a second statement questions the same fact before review, only the latest marker is kept (its saved `original_confidence` carries over).
 - Model judgments vary; measure on your own data (see `research/eval`) before raising trust.

@@ -490,6 +490,40 @@ class TestJevDecider:
                 SignificanceRequest(interaction=Interaction.from_pair("hi", "hello"))
             )
 
+    async def test_timeout_cancels_sibling_calls(self):
+        """One hung candidate: once it times out, the other calls are cancelled
+        and no new ones start, so nothing more is sent after the chain falls through."""
+        started: list[str] = []
+        completed: list[str] = []
+        cancelled: list[str] = []
+
+        async def run(state, output_type):
+            started.append(state)
+            hangs = len(started) == 1  # the first call to start never answers
+            try:
+                await asyncio.sleep(10 if hangs else 0.1)
+            except asyncio.CancelledError:
+                cancelled.append(state)
+                raise
+            completed.append(state)
+            return ConflictQuestion(contradicts=False), {"contradicts": 0.9}
+
+        existing = [_m(f"m{i}", f"User likes food number {i}") for i in range(6)]
+        decider = JevDecider(runner=run, timeout=0.25, max_concurrency=2, max_candidates=6)
+        with pytest.raises(asyncio.TimeoutError):
+            await decider.decide(
+                ContradictionRequest(new_content="User likes food", existing=existing)
+            )
+        started_at_failure = len(started)
+        completed_at_failure = len(completed)
+
+        await asyncio.sleep(1.0)  # long enough for every fast call to have finished
+
+        assert len(started) == started_at_failure < 6  # nothing new sent after the failure
+        assert len(completed) == completed_at_failure < 5  # nothing finished in the background
+        assert len(completed) + len(cancelled) == len(started)  # in-flight calls were cancelled
+        assert started[0] in cancelled
+
     async def test_contradiction_respects_max_concurrency(self):
         in_flight = 0
         peak = 0

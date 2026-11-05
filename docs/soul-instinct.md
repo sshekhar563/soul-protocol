@@ -198,7 +198,7 @@ See [MCP Server](mcp-server.md#soul_decide).
 
 `NLIContradictionDecider` and `HeuristicDecider` run entirely on the user's machine. `EngineDecider` sends memory text to its LLM provider — attach it only with the user's consent.
 
-`JevDecider` sends memory text to TypeSafe's hosted API: for contradictions, the new statement plus up to `max_candidates` (default 10) related live memories, one pair per request; for significance, the turn, the soul's core values and the last five memories. Attach it only with the user's consent. Each call has a `timeout` (default 30 s), and at most `max_concurrency` (default 4) calls run at once. A call that times out raises, so the chain records an error and falls through to the next decider.
+`JevDecider` sends memory text to TypeSafe's hosted API: for contradictions, the new statement plus up to `max_candidates` (default 10) related live memories, one pair per request; for significance, the turn, the soul's core values and the last five memories. Attach it only with the user's consent. Each call has a `timeout` (default 10 s), and at most `max_concurrency` (default 4) calls run at once, so a contradiction decision takes at most `ceil(max_candidates / max_concurrency) * timeout` (30 s with the defaults). When a call times out or fails, the other in-flight calls for that decision are cancelled, so no more memory text is sent; the chain records an error and falls through to the next decider.
 
 The `soul instinct` CLI downloads the two local models (about 380 MB) on first run and says so before it starts; later runs work offline.
 

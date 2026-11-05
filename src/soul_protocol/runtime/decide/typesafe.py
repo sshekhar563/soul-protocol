@@ -8,6 +8,8 @@
 # Updated: feat/jev-decider (#325 review) — per-call timeout and concurrency cap on
 #   hosted calls, provider_details confidences validated before use, a wrong answer
 #   type raises TypeError for both questions, privacy note in the class docstring.
+#   Contradiction fan-out uses a TaskGroup so the first failure cancels sibling
+#   calls; default timeout lowered to 10 s.
 
 from __future__ import annotations
 
@@ -39,7 +41,7 @@ from soul_protocol.runtime.types import SignificanceScore
 
 DEFAULT_JEV_MODEL: str = "typesafe:jev-latest"
 DEFAULT_JEV_MAX_CANDIDATES: int = 10
-DEFAULT_JEV_TIMEOUT: float = 30.0
+DEFAULT_JEV_TIMEOUT: float = 10.0
 DEFAULT_JEV_MAX_CONCURRENCY: int = 4
 RUBRIC_MAX: int = 4
 
@@ -127,8 +129,11 @@ class JevDecider:
         max_candidates: Maximum existing memories checked per contradiction request.
         significance_threshold: Overall-significance bar for ``significant``.
         timeout: Seconds to wait for each hosted call. On expiry the call raises
-            ``asyncio.TimeoutError``, which the chain records as an error before
-            falling through. ``None`` disables the timeout.
+            ``asyncio.TimeoutError`` and the other in-flight calls for the same
+            decision are cancelled; the chain records an error and falls
+            through. ``None`` disables the timeout. Worst case per contradiction
+            decision is ``ceil(max_candidates / max_concurrency) * timeout``
+            (30 s with the defaults).
         max_concurrency: Maximum hosted calls in flight at once during one
             contradiction check.
     """
@@ -194,15 +199,27 @@ class JevDecider:
                 source=self.name,
                 reason="no live memories to compare",
             )
+        # TaskGroup (not gather): the first failure, e.g. a timed-out call,
+        # cancels the sibling calls, so no more requests reach TypeSafe once
+        # this decision has already failed and the chain has fallen through.
         limit = asyncio.Semaphore(self._max_concurrency)
-        answers = await asyncio.gather(
-            *(
-                self._ask(
-                    f"OLD: {entry.content}\nNEW: {request.new_content}", ConflictQuestion, limit
-                )
-                for entry in candidates
-            )
-        )
+        try:
+            async with asyncio.TaskGroup() as group:
+                tasks = [
+                    group.create_task(
+                        self._ask(
+                            f"OLD: {entry.content}\nNEW: {request.new_content}",
+                            ConflictQuestion,
+                            limit,
+                        )
+                    )
+                    for entry in candidates
+                ]
+        except ExceptionGroup as eg:
+            # Surface the first real error (TimeoutError, TypeError, ...) so the
+            # chain records what actually went wrong, not a wrapper.
+            raise eg.exceptions[0] from eg
+        answers = [task.result() for task in tasks]
 
         findings: list[ContradictionFinding] = []
         confidences: list[float] = []

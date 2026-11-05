@@ -778,7 +778,7 @@ from soul_protocol.runtime.decide import NLIContradictionDecider
 soul.use_deciders([NLIContradictionDecider()])
 ```
 
-`NLIContradictionDecider` runs locally. `JevDecider(model="typesafe:jev-latest", *, max_candidates=10, timeout=30.0, max_concurrency=4)` answers contradiction and significance with TypeSafe's hosted Jev model (`pip install 'soul-protocol[decide-jev]'`, `TYPESAFE_API_KEY`). **It sends memory text to TypeSafe's API**, so attach it only with the user's consent. See [Soul Instinct › Privacy](soul-instinct.md#privacy).
+`NLIContradictionDecider` runs locally. `JevDecider(model="typesafe:jev-latest", *, max_candidates=10, timeout=10.0, max_concurrency=4)` answers contradiction and significance with TypeSafe's hosted Jev model (`pip install 'soul-protocol[decide-jev]'`, `TYPESAFE_API_KEY`). **It sends memory text to TypeSafe's API**, so attach it only with the user's consent. See [Soul Instinct › Privacy](soul-instinct.md#privacy).
 
 #### `soul.deciders` / `soul.instinct`
 

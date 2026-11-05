@@ -73,7 +73,7 @@ embeddings-st = ["sentence-transformers>=2.0.0"]
 embeddings-openai = ["openai>=1.0.0"]
 embeddings-ollama = ["ollama>=0.4.0"]
 # JevDecider (TypeSafe hosted decision model). Sends memory text to TypeSafe's API.
-decide-jev = ["pydantic-ai-slim[typesafe]>=2.45.0"]
+decide-jev = ["pydantic-ai-slim[typesafe]>=2.66.0"]
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23",

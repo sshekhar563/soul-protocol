@@ -113,3 +113,24 @@ def test_proxy_validation_errors(proxy):
             ).status_code
             == 400
         )
+
+
+def test_proxy_ignores_non_string_text_parts(proxy):
+    """``{"text": 5}`` parts are skipped instead of crashing ``" ".join``."""
+    app, _, _, captured = proxy
+    with TestClient(app) as client:
+        r = client.post(
+            "/v1/chat/completions",
+            json={"messages": [{"role": "user", "content": [{"text": 5}]}]},
+        )
+    assert r.status_code == 200
+    assert captured["body"]["messages"][-1]["content"] == [{"text": 5}]
+
+
+def test_assistant_reply_skips_non_string_text_parts():
+    from soul_protocol.gateway.app import _assistant_reply, _last_user_message
+
+    reply = {"choices": [{"message": {"content": [{"text": 5}, {"text": "ok"}]}}]}
+    assert _assistant_reply(reply) == "ok"
+    msgs = [{"role": "user", "content": [{"text": None}, {"text": "hi"}, {"text": ["x"]}]}]
+    assert _last_user_message(msgs) == "hi"

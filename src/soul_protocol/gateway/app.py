@@ -145,11 +145,27 @@ def _int_param(value: Any, name: str, default: int, lo: int, hi: int) -> int:
     """Coerce ``value`` to an int clamped to ``[lo, hi]``; 400 on bad input."""
     if value is None:
         return default
+    if isinstance(value, bool):  # bool is an int subclass; true would become 1
+        raise _BadRequest(f"{name} must be an integer")
     try:
         number = int(value)
     except (TypeError, ValueError):
         raise _BadRequest(f"{name} must be an integer") from None
     return max(lo, min(hi, number))
+
+
+def _str_param(value: Any, name: str, default: str | None = None) -> str | None:
+    """Return ``value`` if it is a string, ``default`` if absent; 400 otherwise.
+
+    Body fields that flow into plain string code (``query.lower()``, dict
+    lookups keyed by ``user_id`` / ``layer``) would otherwise fail with a
+    ``TypeError`` / ``AttributeError`` and surface as a 500.
+    """
+    if value is None:
+        return default
+    if not isinstance(value, str):
+        raise _BadRequest(f"{name} must be a string")
+    return value
 
 
 def _handles_bad_request(handler):
@@ -222,7 +238,9 @@ def _last_user_message(messages: list[Any]) -> str:
         if isinstance(content, str):
             return content
         if isinstance(content, list):
-            parts = [p.get("text", "") for p in content if isinstance(p, dict) and p.get("text")]
+            parts = [
+                p["text"] for p in content if isinstance(p, dict) and isinstance(p.get("text"), str)
+            ]
             return " ".join(parts)
     return ""
 
@@ -236,7 +254,9 @@ def _assistant_reply(response_json: dict[str, Any]) -> str:
     if isinstance(content, str):
         return content
     if isinstance(content, list):
-        return " ".join(p.get("text", "") for p in content if isinstance(p, dict) and p.get("text"))
+        return " ".join(
+            p["text"] for p in content if isinstance(p, dict) and isinstance(p.get("text"), str)
+        )
     return ""
 
 
@@ -319,38 +339,36 @@ def create_app(
 
     async def remember(request: Request) -> JSONResponse:
         body = await _body(request)
-        content = body.get("content")
+        content = _str_param(body.get("content"), "content")
         if not content:
             return _json({"error": "content is required"}, status=400)
+        memory_type_name = _str_param(body.get("memory_type"), "memory_type", "semantic")
         try:
-            memory_type = MemoryType(body.get("memory_type", "semantic"))
+            memory_type = MemoryType(memory_type_name)
         except ValueError:
-            return _json(
-                {"error": f"invalid memory_type: {body.get('memory_type')}"},
-                status=400,
-            )
+            return _json({"error": f"invalid memory_type: {memory_type_name}"}, status=400)
         importance = _int_param(body.get("importance"), "importance", 5, 1, 10)
         memory_id = await soul.remember(
             content,
             type=memory_type,
             importance=importance,
-            emotion=body.get("emotion"),
-            domain=body.get("domain", "default"),
+            emotion=_str_param(body.get("emotion"), "emotion"),
+            domain=_str_param(body.get("domain"), "domain", "default"),
         )
         return _json({"memory_id": memory_id, "soul": soul.name})
 
     async def recall(request: Request) -> JSONResponse:
         body = await _body(request)
-        query = body.get("query", "")
+        query = _str_param(body.get("query"), "query", "")
         if not query:
             return _json({"error": "query is required"}, status=400)
         limit = _int_param(body.get("limit"), "limit", 5, 1, 200)
         results = await soul.recall(
             query,
             limit=limit,
-            user_id=body.get("user_id"),
-            layer=body.get("layer"),
-            domain=body.get("domain"),
+            user_id=_str_param(body.get("user_id"), "user_id"),
+            layer=_str_param(body.get("layer"), "layer"),
+            domain=_str_param(body.get("domain"), "domain"),
         )
         return _json(
             {"count": len(results), "soul": soul.name, "memories": _memories_payload(results)}
@@ -358,15 +376,15 @@ def create_app(
 
     async def observe(request: Request) -> JSONResponse:
         body = await _body(request)
-        user_input = body.get("user_input")
+        user_input = _str_param(body.get("user_input"), "user_input")
         if not user_input:
             return _json({"error": "user_input is required"}, status=400)
         await soul.observe(
             Interaction(
                 user_input=user_input,
-                agent_output=body.get("agent_output", ""),
+                agent_output=_str_param(body.get("agent_output"), "agent_output", ""),
             ),
-            user_id=body.get("user_id"),
+            user_id=_str_param(body.get("user_id"), "user_id"),
         )
         s = soul.state
         return _json(
@@ -380,18 +398,18 @@ def create_app(
 
     async def turn(request: Request) -> JSONResponse:
         body = await _body(request)
-        user_input = body.get("user_input")
+        user_input = _str_param(body.get("user_input"), "user_input")
         if not user_input:
             return _json({"error": "user_input is required"}, status=400)
         result = await AutoObserveMiddleware(soul).turn(
             user_input,
-            body.get("agent_output", ""),
-            query=body.get("query"),
+            _str_param(body.get("agent_output"), "agent_output", ""),
+            query=_str_param(body.get("query"), "query"),
             limit=_int_param(body.get("limit"), "limit", 5, 1, 200),
-            user_id=body.get("user_id"),
-            layer=body.get("layer"),
-            domain=body.get("domain"),
-            channel=body.get("channel"),
+            user_id=_str_param(body.get("user_id"), "user_id"),
+            layer=_str_param(body.get("layer"), "layer"),
+            domain=_str_param(body.get("domain"), "domain"),
+            channel=_str_param(body.get("channel"), "channel"),
         )
         result["status"] = "observed"
         return _json(result)

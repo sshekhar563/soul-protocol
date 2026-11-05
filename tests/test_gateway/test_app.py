@@ -145,9 +145,26 @@ def test_api_memories_bad_limit_is_400(client):
         ("/remember", {"content": "x", "domain": {"a": 1}}),
         ("/observe", {"user_input": {"a": 1}}),
         ("/observe", {"user_input": "hi", "agent_output": {"a": 1}}),
+        ("/observe", {"user_input": "hi", "user_id": ["u"]}),
+        ("/observe", {"user_input": "hi", "user_id": 7}),
+        ("/remember", {"content": "x", "emotion": ["happy"]}),
+        ("/remember", {"content": "x", "memory_type": ["semantic"]}),
+        ("/remember", {"content": "x", "importance": True}),
+        ("/recall", {"query": 123}),
+        ("/recall", {"query": "q", "layer": ["x"]}),
+        ("/recall", {"query": "q", "domain": {"a": 1}}),
+        ("/recall", {"query": "q", "user_id": ["u"]}),
+        ("/turn", {"user_input": "hi", "query": 123}),
+        ("/turn", {"user_input": "hi", "channel": ["c"]}),
+        ("/turn", {"user_input": "hi", "user_id": ["u"]}),
+        ("/turn", {"user_input": ["hi"]}),
     ],
 )
 def test_non_string_fields_are_400(client, path, body):
+    before = client.get("/api/stats").json()
     r = client.post(path, json=body)
     assert r.status_code == 400
     assert "error" in r.json()
+    after = client.get("/api/stats").json()
+    assert after["memory_counts"] == before["memory_counts"]
+    assert after["interaction_count"] == before["interaction_count"]
